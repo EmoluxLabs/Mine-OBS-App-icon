@@ -1,0 +1,4 @@
+android-app/build/
+android-app/dist/
+__pycache__/
+*.pyc
