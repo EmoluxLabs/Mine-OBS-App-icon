@@ -63,8 +63,10 @@ manifest were extracted from a public `android.jar` mirror
 
 ## Installing the APK
 
-Download the release asset (see the repository Releases page) and open it on
-the device, or:
+Direct download (signed release binary, also committed under `release/`):
+<https://github.com/EmoluxLabs/Mine-OBS-App-icon/raw/arena/7230b132-mine-obs-app-icon/release/Mine-OBS-v1.0.0.apk>
+
+Open it on the device, or:
 
 ```bash
 adb install Mine-OBS-v1.0.0.apk
