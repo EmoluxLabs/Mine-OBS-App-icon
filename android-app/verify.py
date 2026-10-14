@@ -136,7 +136,8 @@ def main(apk_path, cert_pem):
         n = struct.unpack_from('<I', buf, off)[0]
         return buf[off + 4:off + 4 + n], off + 4 + n
 
-    signer, o = rd(v2, 0)
+    signers_seq, o = rd(v2, 0)
+    signer, o = rd(signers_seq, 0)
     signed_data, o = rd(signer, 0)
     sigs_seq, o = rd(signer, o)
     pubkey_der, o = rd(signer, o)
@@ -155,7 +156,8 @@ def main(apk_path, cert_pem):
     content = raw[:blk_start] + raw[blk_end:eocd] + bytes(eocd_for_digest)
     check(struct.unpack_from('<I', raw, eocd + 16)[0] == blk_end,
           'EOCD central-dir offset points at physical central directory')
-    chunks = [content[i:i + CHUNK] for i in range(0, len(content), CHUNK)]
+    chunks = [c for sec in (raw[:blk_start], raw[blk_end:eocd], bytes(eocd_for_digest))
+              for c in [sec[i:i + CHUNK] for i in range(0, len(sec), CHUNK)]]
     top = bytearray(b'\x5a') + struct.pack('<I', len(chunks))
     for c in chunks:
         top += hashlib.sha256(b'\xa5' + struct.pack('<I', len(c)) + c).digest()

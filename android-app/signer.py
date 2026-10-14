@@ -95,14 +95,17 @@ def write_zip(entries):
 # --------------------------------------------------------------------------
 # v2 signing
 # --------------------------------------------------------------------------
-def _chunked_digest(blob):
-    chunks = [blob[i:i + CHUNK_SIZE] for i in range(0, len(blob), CHUNK_SIZE)] or [b'']
-    out = bytearray(b'\x5a')
-    out += struct.pack('<I', len(chunks))
-    for c in chunks:
-        chunk_digest = hashlib.sha256(b'\xa5' + struct.pack('<I', len(c)) + c).digest()
-        out += chunk_digest
-    return hashlib.sha256(bytes(out)).digest()
+def _chunked_digest(*sections):
+    """apksig-compatible chunked content digest: each zip section is chunked
+    into 1 MB pieces *independently* (section boundaries are chunk
+    boundaries), exactly like AOSP apksig / the Android package verifier."""
+    digests = []
+    for sec in sections:
+        for i in range(0, len(sec), CHUNK_SIZE):
+            c = sec[i:i + CHUNK_SIZE]
+            digests.append(hashlib.sha256(b'\xa5' + struct.pack('<I', len(c)) + c).digest())
+    top = b'\x5a' + struct.pack('<I', len(digests)) + b''.join(digests)
+    return hashlib.sha256(top).digest()
 
 
 def _lp(b):
@@ -119,8 +122,11 @@ def _find_eocd(data):
 def sign_v2(apk_bytes, key, cert):
     eocd = _find_eocd(apk_bytes)
     cd_off = struct.unpack_from('<I', apk_bytes, eocd + 16)[0]
-    content = apk_bytes            # sec1 + sec2 + sec3 (EOCD cd-offset already == block offset)
-    digest = _chunked_digest(content)
+    # section 3 = EOCD with the central-directory offset field treated as the
+    # signing-block offset (for the digest only)
+    sec3 = bytearray(apk_bytes[eocd:])
+    struct.pack_into('<I', sec3, 16, cd_off)
+    digest = _chunked_digest(apk_bytes[:cd_off], apk_bytes[cd_off:eocd], bytes(sec3))
 
     cert_der = cert.public_bytes(serialization.Encoding.DER)
     pub_der = key.public_key().public_bytes(
@@ -134,7 +140,8 @@ def sign_v2(apk_bytes, key, cert):
     signature = key.sign(signed_data, padding.PKCS1v15(), hashes.SHA256())
     signatures_seq = _lp(struct.pack('<I', V2_RSA_PKCS1_SHA256) + _lp(signature))
     signer = _lp(signed_data) + _lp(signatures_seq) + _lp(pub_der)
-    signers_seq = _lp(signer)
+    # pair value = length-prefixed *sequence* of length-prefixed signers
+    signers_seq = _lp(_lp(signer))
 
     pair_value = signers_seq
     pair = struct.pack('<Q', len(pair_value) + 4) + struct.pack('<I', 0x7109871a) + pair_value
